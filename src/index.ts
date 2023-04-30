@@ -76,3 +76,6 @@ app.post("/checkout", async (req: CheckoutRequest, res: Response) => {
 app.listen(port, () => {
   console.log(`Server running on port ${port}`)
 })
+
+
+// esperando mais aulas
