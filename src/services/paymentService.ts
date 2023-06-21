@@ -1,16 +1,38 @@
-import { Customer, Order } from "@prisma/client"
+import { Customer, Order, OrderStatus } from "@prisma/client"
 
 import { PaymentData } from "../interfaces/PaymentData"
 
 import { api } from "../lib/api"
 
 export default class PaymentService {
-  async process(order: Order, customer: Customer, payment: PaymentData) {
-    // TODO: criar o customer
-    const customerId = await this.createCustomer(customer)
-    console.log("customerId", customerId)
+  async process(
+    order: Order,
+    customer: Customer,
+    payment: PaymentData
+  ): Promise<{ transactionId: string; status: OrderStatus }> {
+    try {
+      const customerId = await this.createCustomer(customer)
+      const transaction = await this.createTransaction(
+        customerId,
+        order,
+        customer,
+        payment
+      )
 
-    // TODO: processar a transação
+      return {
+        transactionId: transaction.transactionId,
+        status: OrderStatus.PAID,
+      }
+    } catch (error) {
+      console.error(
+        "Error on process payment: ",
+        JSON.stringify(error, null, 2)
+      )
+      return {
+        transactionId: "",
+        status: OrderStatus.CANCELED,
+      }
+    }
   }
 
   private async createCustomer(customer: Customer): Promise<string> {
@@ -36,5 +58,47 @@ export default class PaymentService {
     const response = await api.post("/customers", customerParams)
 
     return response.data?.id
+  }
+
+  private async createTransaction(
+    customerId: string,
+    order: Order,
+    customer: Customer,
+    payment: PaymentData
+  ): Promise<{
+    transactionId: string
+    gatewayStatus: string
+  }> {
+    const paymentParams = {
+      customer: customerId,
+      billingType: "CREDIT_CARD",
+      dueDate: new Date().toISOString(),
+      value: order.total,
+      description: `Pedido #${order.id}`,
+      externalReference: order.id.toString(),
+      creditCard: {
+        holderName: payment.creditCardHolder,
+        number: payment.creditCardNumber,
+        expiryMonth: payment.creditCardExpiration?.split("/")[0],
+        expiryYear: payment.creditCardExpiration?.split("/")[1],
+        ccv: payment.creditCardSecurityCode,
+      },
+      creditCardHolderInfo: {
+        name: customer.fullName,
+        email: customer.email,
+        cpfCnpj: customer.document,
+        postalCode: customer.zipCode,
+        addressNumber: customer.number,
+        addressComplement: customer.complement,
+        mobilePhone: customer.mobile,
+      },
+    }
+
+    const response = await api.post("/payments", paymentParams)
+
+    return {
+      transactionId: response.data?.id,
+      gatewayStatus: response.data?.status,
+    }
   }
 }
